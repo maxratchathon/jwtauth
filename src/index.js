@@ -4,6 +4,13 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const { vertify } = require("jsonwebtoken");
 const { hash, compare } = require("bcryptjs");
+const fakeDB = require("./fakeDB");
+const {
+  createAccessToken,
+  createRefreshToken,
+  sendAccessToken,
+  sendRefreshToken,
+} = require("./token.js");
 
 // 1.register a user
 // 2. Login a user
@@ -30,9 +37,46 @@ server.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    // 1. Check if the user exist
+    const user = await fakeDB.find((user) => user.email == email);
+    if (user) {
+      throw new Error("user already exist");
+    }
+    // 2.if user not exist, hash the password
     const hashedPassword = await hash(password, 10);
-    console.log(hashedPassword);
+    fakeDB.push({
+      id: fakeDB.length,
+      email,
+      password: hashedPassword,
+    });
+    res.send({ message: "User Created" });
+    console.log(fakeDB);
   } catch (err) {
+    res.send({ error: `${err.message}` });
     console.log(err);
   }
+});
+
+server.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  const user = await fakeDB.find((user) => user.email == email);
+  // 1. user does not exist
+  if (!user) {
+    throw new Error("user does not exist"); // user does not exist
+  }
+  // 2. Compare crypted password and see if it check, send error if not
+  const valid = await compare(password, user.password);
+  if (!valid) throw new Error("username or password is incorrect");
+
+  // 3. Create Refresh token and Access Token
+  const accessToken = createAccessToken(user.id);
+  const refreshToken = createRefreshToken(user.id);
+
+  // 4. Put token inside the database
+  user.refreshToken = refreshToken;
+  user.accessToken = accessToken;
+  console.log(fakeDB);
+
+  // 5. Send token, refreshToken as a cookie and accessToken as a regular token
+  sendRefreshToken(res, refreshToken);
 });
